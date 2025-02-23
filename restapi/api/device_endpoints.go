@@ -246,6 +246,17 @@ func SetHttpProxy(c *gin.Context) {
 		return
 	}
 
+	p12file := c.Query("p12file")
+	p12password := c.Query("p12password")
+	if p12password == "" {
+		p12password = os.Getenv("P12_PASSWORD")
+	}
+	p12bytes, err := os.ReadFile(p12file)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, GenericResponse{Error: err.Error()})
+		return
+	}
+
 	user := c.Query("user")
 	password := c.Query("password")
 	if password == "" {
@@ -253,7 +264,7 @@ func SetHttpProxy(c *gin.Context) {
 		return
 	}
 
-	err := mcinstall.SetHttpProxy(device, host, port, user, password, nil, "")
+	err = mcinstall.SetHttpProxy(device, host, port, user, password, p12bytes, p12password)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, GenericResponse{Error: err.Error()})
 		return
