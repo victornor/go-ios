@@ -15,6 +15,7 @@ import (
 	"github.com/danielpaulus/go-ios/ios/instruments"
 	"github.com/danielpaulus/go-ios/ios/mcinstall"
 	"github.com/danielpaulus/go-ios/ios/simlocation"
+	"github.com/danielpaulus/go-ios/ios/mcinstall"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 )
@@ -232,6 +233,33 @@ func ResetLocation(c *gin.Context) {
 	c.JSON(http.StatusOK, GenericResponse{Message: "Device location reset"})
 }
 
+
+func SetHttpProxy(c *gin.Context) {
+	device := c.MustGet(IOS_KEY).(ios.DeviceEntry)
+	host := c.Query("host")
+	if host == "" {
+		c.JSON(http.StatusUnprocessableEntity, GenericResponse{Error: "host query param is missing"})
+		return
+	}
+
+	port := c.Query("port")
+	if port == "" {
+		c.JSON(http.StatusUnprocessableEntity, GenericResponse{Error: "port query param is missing"})
+		return
+	}
+
+	user := c.Query("user")
+	password := c.Query("password")
+	 
+	err := mcinstall.SetHttpProxy(device, host, port, user, password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, GenericResponse{Error: err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, GenericResponse{Message: "Device global http proxy has been updated"})
+}
+ 
 // Get the list of installed profiles
 // @Summary      get the list of profiles
 // @Description  get the list of installed profiles from the ios device
