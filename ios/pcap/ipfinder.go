@@ -1,6 +1,10 @@
 package pcap
 
 import (
+	"context"
+	"fmt"
+	"time"
+
 	"github.com/danielpaulus/go-ios/ios"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -26,6 +30,74 @@ func FindIp(device ios.DeviceEntry) (NetworkInfo, error) {
 		return NetworkInfo{}, err
 	}
 	return findIp(device, mac)
+}
+
+// FindIpWithTimeout reads pcap packets until one is found that matches the given MAC
+// and contains an IP address, with a timeout. Returns partial results if timeout is reached.
+// This won't work if the iOS device "automatic Wifi address" privacy feature is enabled.
+func FindIpWithTimeout(device ios.DeviceEntry, timeout time.Duration) (NetworkInfo, error) {
+	mac, err := ios.GetWifiMac(device)
+	if err != nil {
+		return NetworkInfo{}, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return findIpWithContext(ctx, device, mac)
+}
+
+func findIpWithContext(ctx context.Context, device ios.DeviceEntry, mac string) (NetworkInfo, error) {
+	intf, err := ios.ConnectToService(device, "com.apple.pcapd")
+	if err != nil {
+		return NetworkInfo{}, err
+	}
+	defer intf.Close()
+
+	plistCodec := ios.NewPlistCodec()
+	info := NetworkInfo{}
+	info.Mac = mac
+
+	type packetResult struct {
+		data []byte
+		err  error
+	}
+
+	for {
+		resultCh := make(chan packetResult, 1)
+
+		go func() {
+			b, err := plistCodec.Decode(intf.Reader())
+			resultCh <- packetResult{data: b, err: err}
+		}()
+
+		select {
+		case <-ctx.Done():
+			if info.IPv4 != "" || info.IPv6 != "" {
+				return info, nil
+			}
+			return info, fmt.Errorf("timeout waiting for IP address, ensure device has network traffic and 'Private Wi-Fi Address' is disabled")
+		case result := <-resultCh:
+			if result.err != nil {
+				return NetworkInfo{}, result.err
+			}
+			decodedBytes, err := fromBytes(result.data)
+			if err != nil {
+				return NetworkInfo{}, err
+			}
+			_, packet, err := getPacket(decodedBytes)
+			if err != nil {
+				return NetworkInfo{}, err
+			}
+			if len(packet) > 0 {
+				err := findIP(packet, &info)
+				if err != nil {
+					return NetworkInfo{}, err
+				}
+				if info.complete() {
+					return info, nil
+				}
+			}
+		}
+	}
 }
 
 func findIp(device ios.DeviceEntry, mac string) (NetworkInfo, error) {

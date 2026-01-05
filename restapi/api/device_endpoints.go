@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/danielpaulus/go-ios/ios/imagemounter"
 	"github.com/danielpaulus/go-ios/ios/mobileactivation"
@@ -14,6 +15,7 @@ import (
 	"github.com/danielpaulus/go-ios/ios"
 	"github.com/danielpaulus/go-ios/ios/instruments"
 	"github.com/danielpaulus/go-ios/ios/mcinstall"
+	"github.com/danielpaulus/go-ios/ios/pcap"
 	"github.com/danielpaulus/go-ios/ios/simlocation"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -116,6 +118,7 @@ func InstallImage(c *gin.Context) {
 // @Tags         general_device_specific
 // @Produce      json
 // @Param        udid  path      string  true  "device udid"
+// @Param        include_ip  query      string  false  "set to 'true' to include device local IP (requires network traffic, may take a few seconds)"
 // @Success      200  {object}  map[string]interface{}
 // @Param        udid path string true "Device UDID"
 // @Router       /device/{udid}/info [get]
@@ -144,6 +147,24 @@ func Info(c *gin.Context) {
 			allValues["instruments:hardwareInformation"] = info
 		}
 	}
+
+	includeIP := c.Query("include_ip")
+	if includeIP == "true" {
+		networkInfo, err := pcap.FindIpWithTimeout(device, 5*time.Second)
+		if err != nil {
+			log.Debugf("error getting IP from pcap: %v", err)
+			allValues["localIP"] = map[string]interface{}{
+				"error": err.Error(),
+			}
+		} else {
+			allValues["localIP"] = map[string]interface{}{
+				"mac":  networkInfo.Mac,
+				"ipv4": networkInfo.IPv4,
+				"ipv6": networkInfo.IPv6,
+			}
+		}
+	}
+
 	c.IndentedJSON(http.StatusOK, allValues)
 }
 
